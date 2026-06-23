@@ -1,5 +1,5 @@
-import { parseBomPdf } from "./parser.js";
-import { downloadExcel } from "./exporter.js";
+import { parseBomPdf } from "./parser.js?v=3";
+import { downloadExcel } from "./exporter.js?v=3";
 
 const dropZone = document.getElementById("drop-zone");
 const fileInput = document.getElementById("file-input");

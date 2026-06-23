@@ -114,16 +114,30 @@ const SUMMARY_PATTERNS = [
 ];
 
 export function parseSummary(text) {
+  if (!text) return [];
+
   const matches = [...text.matchAll(/Totals for Finished Item:[\s\S]*/g)];
-  const block = matches.length ? matches[matches.length - 1][0] : text;
+  let block = matches.length ? matches[matches.length - 1][0] : text;
+
+  const summaryInfoIndex = block.indexOf("Summary Information");
+  if (summaryInfoIndex !== -1) {
+    block = block.slice(summaryInfoIndex);
+  }
+
   const rows = [];
+  const seen = new Set();
 
   for (const rawLine of block.split(/\r?\n/)) {
     const line = cleanText(rawLine);
+    if (!line || line.startsWith("Contribution analysis")) break;
+
     for (const [pattern, label, kind] of SUMMARY_PATTERNS) {
       const m = line.match(pattern);
       if (m) {
-        rows.push({ label, kind, value: parseFloat(m[1]) });
+        if (!seen.has(label)) {
+          seen.add(label);
+          rows.push({ label, kind, value: parseFloat(m[1]) });
+        }
         break;
       }
     }
@@ -132,7 +146,27 @@ export function parseSummary(text) {
   return rows;
 }
 
-export function parseBomFromText(fullText, pageTexts) {
+function stripTrailingAbbreviatedSummary(pageText) {
+  if (!pageText || pageText.includes("Totals for Finished Item")) {
+    return pageText;
+  }
+
+  const lines = pageText.split(/\r?\n/);
+  const startIdx = lines.findIndex((line) => {
+    const cleaned = cleanText(line);
+    return (
+      /^MATERIAL\s+[\d.]+/.test(cleaned) &&
+      lines.slice(lines.indexOf(line)).some((entry) =>
+        /^TOTAL COST\s+/.test(cleanText(entry)),
+      )
+    );
+  });
+
+  if (startIdx === -1) return pageText;
+  return lines.slice(0, startIdx).join("\n");
+}
+
+export function parseBomFromText(fullText, pageTexts, summaryText = null) {
   const sections = [];
   let currentSection = null;
 
@@ -159,7 +193,7 @@ export function parseBomFromText(fullText, pageTexts) {
   return {
     meta: extractMetadata(fullText),
     sections,
-    summary: parseSummary(fullText),
+    summary: parseSummary(summaryText || fullText),
   };
 }
 
@@ -209,8 +243,9 @@ export function splitIntoBomBlocks(pageTexts) {
     }
 
     if (hasLineItems) {
-      itemPages.push(pageText);
-      bomTextParts.push(pageText);
+      const cleanedPage = stripTrailingAbbreviatedSummary(pageText);
+      itemPages.push(cleanedPage);
+      bomTextParts.push(cleanedPage);
     } else if (
       pageText.includes("COSTED BILL OF MATERIAL") &&
       pageText.includes("ITEM NO") &&
@@ -247,6 +282,7 @@ export function parseBomReport(fullText, pageTexts) {
     parseBomFromText(
       block.fullText || block.itemPages.join("\n"),
       block.itemPages,
+      block.summaryText,
     ),
   );
 

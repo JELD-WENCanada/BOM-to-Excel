@@ -98,11 +98,40 @@ def extract_metadata(text: str) -> dict:
     return meta
 
 
+def strip_trailing_abbreviated_summary(page_text: str) -> str:
+    if not page_text or "Totals for Finished Item" in page_text:
+        return page_text
+
+    lines = page_text.splitlines()
+    start_idx = None
+    for index, line in enumerate(lines):
+        cleaned = clean_text(line)
+        if re.match(r"^MATERIAL\s+[\d.]+", cleaned) and any(
+            re.match(r"^TOTAL COST\s+", clean_text(entry))
+            for entry in lines[index:]
+        ):
+            start_idx = index
+            break
+
+    if start_idx is None:
+        return page_text
+    return "\n".join(lines[:start_idx])
+
+
 def parse_summary(text: str) -> list[dict]:
     """Extract summary rows from the detailed totals page (CURR cost only)."""
+    if not text:
+        return []
+
     matches = list(re.finditer(r"Totals for Finished Item:.*", text, re.DOTALL))
     block = matches[-1].group(0) if matches else text
+
+    summary_info_index = block.find("Summary Information")
+    if summary_info_index != -1:
+        block = block[summary_info_index:]
+
     rows = []
+    seen: set[str] = set()
     patterns = [
         (r"^MATERIAL\s+([\d.]+)", "MATERIAL", "material"),
         (r"^VEND-FRT & DISC\s+([\d.]+)", "VEND-FRT & DISC", "editable"),
@@ -133,10 +162,14 @@ def parse_summary(text: str) -> list[dict]:
 
     for line in block.splitlines():
         line = re.sub(r"\(cid:\d+\)", "", line).strip()
+        if not line or line.startswith("Contribution analysis"):
+            break
         for pattern, label, kind in patterns:
             m = re.match(pattern, line)
             if m:
-                rows.append({"label": label, "kind": kind, "value": float(m.group(1))})
+                if label not in seen:
+                    seen.add(label)
+                    rows.append({"label": label, "kind": kind, "value": float(m.group(1))})
                 break
     return rows
 
@@ -360,8 +393,9 @@ def split_into_bom_blocks(page_texts: list[str]) -> list[dict]:
             push_block(None)
 
         if has_line_items:
-            item_pages.append(page_text)
-            bom_text_parts.append(page_text)
+            cleaned_page = strip_trailing_abbreviated_summary(page_text)
+            item_pages.append(cleaned_page)
+            bom_text_parts.append(cleaned_page)
         elif (
             "COSTED BILL OF MATERIAL" in page_text
             and "ITEM NO" in page_text
@@ -574,7 +608,7 @@ def convert_bom(pdf_path: Path, xlsx_path: Path) -> None:
         meta = extract_metadata(full_text)
         meta["item_no"] = meta.get("item_no") or block["item_no"]
         sections = parse_sections_from_pages(block["item_pages"])
-        summary = parse_summary(full_text)
+        summary = parse_summary(block.get("summary_text") or full_text)
         sheet_name = unique_sheet_name(block["item_no"], used_names)
         write_bom_sheet(wb, sheet_name, meta, sections, summary)
 
