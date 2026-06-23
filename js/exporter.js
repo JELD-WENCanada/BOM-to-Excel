@@ -126,10 +126,55 @@ function writeSummaryPanel(worksheet, summary, sectionTotalRows, startCol, start
   }
 }
 
-export async function buildWorkbook(bom, ExcelJS) {
-  const { meta, sections, summary } = bom;
+export async function buildWorkbook(report, ExcelJS) {
   const workbook = new ExcelJS.Workbook();
-  const worksheet = workbook.addWorksheet("BOM", {
+  const usedNames = new Set();
+
+  for (const bom of report.boms) {
+    const baseName = sanitizeSheetName(
+      bom.sheetName || bom.meta?.itemNo || "BOM",
+    );
+    const sheetName = uniqueSheetName(baseName, usedNames);
+    addBomSheet(workbook, bom, sheetName);
+  }
+
+  return workbook;
+}
+
+function sanitizeSheetName(name) {
+  return String(name || "BOM")
+    .replace(/[\\/*?:\[\]]/g, "")
+    .trim()
+    .slice(0, 31) || "BOM";
+}
+
+function uniqueSheetName(baseName, usedNames) {
+  let candidate = sanitizeSheetName(baseName);
+  if (!usedNames.has(candidate)) {
+    usedNames.add(candidate);
+    return candidate;
+  }
+
+  let index = 2;
+  while (index < 100) {
+    const suffix = ` (${index})`;
+    candidate = sanitizeSheetName(
+      `${baseName.slice(0, 31 - suffix.length)}${suffix}`,
+    );
+    if (!usedNames.has(candidate)) {
+      usedNames.add(candidate);
+      return candidate;
+    }
+    index += 1;
+  }
+
+  usedNames.add(candidate);
+  return candidate;
+}
+
+function addBomSheet(workbook, bom, sheetName) {
+  const { meta, sections, summary } = bom;
+  const worksheet = workbook.addWorksheet(sheetName, {
     views: [{ state: "frozen", ySplit: 5, xSplit: 0 }],
     pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1 },
   });
@@ -235,15 +280,15 @@ export async function buildWorkbook(bom, ExcelJS) {
   worksheet.getColumn(10).width = 28;
   worksheet.getColumn(11).width = 14;
 
-  return workbook;
+  return worksheet;
 }
 
 function cleanText(value) {
   return String(value || "").replace(/\(cid:\d+\)/g, "").trim();
 }
 
-export async function downloadExcel(bom, ExcelJS, filename) {
-  const workbook = await buildWorkbook(bom, ExcelJS);
+export async function downloadExcel(report, ExcelJS, filename) {
+  const workbook = await buildWorkbook(report, ExcelJS);
   const buffer = await workbook.xlsx.writeBuffer();
   const blob = new Blob([buffer], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

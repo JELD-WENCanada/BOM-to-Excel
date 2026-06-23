@@ -68,7 +68,7 @@ export function extractMetadata(text) {
 
   for (const [key, pattern] of patterns) {
     const match = text.match(pattern);
-    if (match) meta[key] = match[1];
+    if (match) meta[key] = cleanText(match[1]);
   }
 
   const descLines = [];
@@ -97,7 +97,7 @@ const SUMMARY_PATTERNS = [
   [/^TOTAL MISC & PALLET\s+([\d.]+)/, "TOTAL MISC & PALLET", "sum_misc_pallet"],
   [/^WASTE\s+([\d.]+)/, "WASTE", "waste"],
   [/^TOTAL MATERIAL\([^)]*\)\s+([\d.]+)/, "TOTAL MATERIAL", "sum_material_block"],
-  [/^LABOR FROM ROUTING\s+([\d.]+)/, "LABOR FROM ROUTING", "editable"],
+  [/^LABOR FROM ROUTINGS?\s+([\d.]+)/, "LABOR FROM ROUTING", "editable"],
   [/^RECEIVING\([^)]*\)\s+([\d.]+)/, "RECEIVING", "editable"],
   [/^WAREHOUSING\([^)]*\)\s+([\d.]+)/, "WAREHOUSING", "editable"],
   [/^TOTAL LABOR\([^)]*\)\s+([\d.]+)/, "TOTAL LABOR", "sum_labor"],
@@ -136,8 +136,7 @@ export function parseBomFromText(fullText, pageTexts) {
   const sections = [];
   let currentSection = null;
 
-  const itemPages = pageTexts.slice(0, 2);
-  for (const pageText of itemPages) {
+  for (const pageText of pageTexts) {
     for (const rawLine of pageText.split(/\r?\n/)) {
       const line = cleanText(rawLine);
       if (!line) continue;
@@ -162,6 +161,112 @@ export function parseBomFromText(fullText, pageTexts) {
     sections,
     summary: parseSummary(fullText),
   };
+}
+
+function pageHasLineItems(pageText) {
+  return /^\d{5}\s/m.test(pageText);
+}
+
+function pageStartsBom(pageText) {
+  return (
+    pageText.includes("COSTED BILL OF MATERIAL") &&
+    pageText.includes("PART#") &&
+    pageHasLineItems(pageText)
+  );
+}
+
+export function splitIntoBomBlocks(pageTexts) {
+  const blocks = [];
+  let itemPages = [];
+  let bomTextParts = [];
+
+  const pushBlock = (summaryText) => {
+    if (!itemPages.length) return;
+
+    const fullText = [...bomTextParts, summaryText].filter(Boolean).join("\n");
+    const totalsMatch = summaryText?.match(/Totals for Finished Item:\s*(\S+)/);
+    const itemNo =
+      cleanText(totalsMatch?.[1]) ||
+      cleanText(fullText.match(/ITEM NO\s*:\s*(\S+)/i)?.[1]) ||
+      `BOM ${blocks.length + 1}`;
+
+    blocks.push({
+      itemNo,
+      itemPages: [...itemPages],
+      summaryText,
+      fullText,
+    });
+    itemPages = [];
+    bomTextParts = [];
+  };
+
+  for (const pageText of pageTexts) {
+    const totalsMatch = pageText.match(/Totals for Finished Item:\s*(\S+)/);
+    const hasLineItems = pageHasLineItems(pageText);
+
+    if (pageStartsBom(pageText) && itemPages.length > 0) {
+      pushBlock(null);
+    }
+
+    if (hasLineItems) {
+      itemPages.push(pageText);
+      bomTextParts.push(pageText);
+    } else if (
+      pageText.includes("COSTED BILL OF MATERIAL") &&
+      pageText.includes("ITEM NO")
+    ) {
+      bomTextParts.push(pageText);
+    }
+
+    if (totalsMatch) {
+      pushBlock(pageText);
+    }
+  }
+
+  if (itemPages.length > 0) {
+    pushBlock(null);
+  }
+
+  return blocks;
+}
+
+export function parseBomReport(fullText, pageTexts) {
+  const blocks = splitIntoBomBlocks(pageTexts);
+
+  if (!blocks.length) {
+    const fallback = parseBomFromText(fullText, pageTexts.slice(0, 2));
+    return {
+      boms: [fallback],
+      bomCount: 1,
+      itemCount: countItems(fallback),
+    };
+  }
+
+  const boms = blocks.map((block) =>
+    parseBomFromText(
+      block.fullText || block.itemPages.join("\n"),
+      block.itemPages,
+    ),
+  );
+
+  for (let index = 0; index < boms.length; index++) {
+    boms[index].meta.itemNo = cleanText(
+      blocks[index].itemNo || boms[index].meta.itemNo,
+    );
+    boms[index].sheetName = boms[index].meta.itemNo;
+  }
+
+  const itemCount = boms.reduce((sum, bom) => sum + countItems(bom), 0);
+
+  return { boms, bomCount: boms.length, itemCount };
+}
+
+function countItems(bom) {
+  return bom.sections.reduce(
+    (sum, section) =>
+      sum + section.items.filter((item) => item.type === "item").length,
+    0,
+  );
 }
 
 function groupTextIntoLines(items) {
@@ -218,19 +323,13 @@ export async function extractPdfText(file, pdfjsLib) {
 
 export async function parseBomPdf(file, pdfjsLib) {
   const { fullText, pageTexts, pageCount } = await extractPdfText(file, pdfjsLib);
-  const bom = parseBomFromText(fullText, pageTexts);
+  const report = parseBomReport(fullText, pageTexts);
 
-  const itemCount = bom.sections.reduce(
-    (sum, section) =>
-      sum + section.items.filter((item) => item.type === "item").length,
-    0,
-  );
-
-  if (itemCount === 0) {
+  if (report.itemCount === 0) {
     throw new Error(
       "No line items found. Make sure this is a costed BOM PDF with part numbers and quantities.",
     );
   }
 
-  return { ...bom, pageCount, itemCount };
+  return { ...report, pageCount };
 }

@@ -80,7 +80,7 @@ def extract_metadata(text: str) -> dict:
     ]:
         m = re.search(pattern, text, re.IGNORECASE)
         if m:
-            meta[key] = m.group(1)
+            meta[key] = clean_text(m.group(1))
 
     desc_lines = []
     for line in text.splitlines():
@@ -115,7 +115,7 @@ def parse_summary(text: str) -> list[dict]:
             "TOTAL MATERIAL",
             "sum_material_block",
         ),
-        (r"^LABOR FROM ROUTING\s+([\d.]+)", "LABOR FROM ROUTING", "editable"),
+        (r"^LABOR FROM ROUTINGS?\s+([\d.]+)", "LABOR FROM ROUTING", "editable"),
         (r"^RECEIVING\([^)]*\)\s+([\d.]+)", "RECEIVING", "editable"),
         (r"^WAREHOUSING\([^)]*\)\s+([\d.]+)", "WAREHOUSING", "editable"),
         (r"^TOTAL LABOR\([^)]*\)\s+([\d.]+)", "TOTAL LABOR", "sum_labor"),
@@ -309,44 +309,130 @@ def write_summary_panel(
         sum_row += 1
 
 
-def convert_bom(pdf_path: Path, xlsx_path: Path) -> None:
-    full_text = ""
+def page_has_line_items(text: str) -> bool:
+    return bool(re.search(r"^\d{5}\s", text, re.MULTILINE))
+
+
+def page_starts_bom(text: str) -> bool:
+    return (
+        "COSTED BILL OF MATERIAL" in text
+        and "PART#" in text
+        and page_has_line_items(text)
+    )
+
+
+def split_into_bom_blocks(page_texts: list[str]) -> list[dict]:
+    blocks: list[dict] = []
+    item_pages: list[str] = []
+    bom_text_parts: list[str] = []
+
+    def push_block(summary_text: str | None) -> None:
+        nonlocal item_pages, bom_text_parts
+        if not item_pages:
+            return
+
+        parts = [*bom_text_parts]
+        if summary_text:
+            parts.append(summary_text)
+        full_text = "\n".join(parts)
+        totals_match = re.search(r"Totals for Finished Item:\s*(\S+)", summary_text or "")
+        item_no = clean_text(totals_match.group(1)) if totals_match else ""
+        if not item_no:
+            item_match = re.search(r"ITEM NO\s*:\s*(\S+)", full_text, re.IGNORECASE)
+            item_no = clean_text(item_match.group(1)) if item_match else f"BOM {len(blocks) + 1}"
+
+        blocks.append(
+            {
+                "item_no": item_no,
+                "item_pages": list(item_pages),
+                "summary_text": summary_text,
+                "full_text": full_text,
+            }
+        )
+        item_pages = []
+        bom_text_parts = []
+
+    for page_text in page_texts:
+        totals_match = re.search(r"Totals for Finished Item:\s*(\S+)", page_text)
+        has_line_items = page_has_line_items(page_text)
+
+        if page_starts_bom(page_text) and item_pages:
+            push_block(None)
+
+        if has_line_items:
+            item_pages.append(page_text)
+            bom_text_parts.append(page_text)
+        elif "COSTED BILL OF MATERIAL" in page_text and "ITEM NO" in page_text:
+            bom_text_parts.append(page_text)
+
+        if totals_match:
+            push_block(page_text)
+
+    if item_pages:
+        push_block(None)
+
+    return blocks
+
+
+def parse_sections_from_pages(page_texts: list[str]) -> list[tuple[str, list]]:
     sections: list[tuple[str, list]] = []
     current_section = None
 
-    with pdfplumber.open(pdf_path) as pdf:
-        for page_index, page in enumerate(pdf.pages):
-            text = page.extract_text() or ""
-            full_text += text + "\n"
-
-            # Line items only appear on the first two pages.
-            if page_index > 1:
+    for page_text in page_texts:
+        for raw_line in page_text.splitlines():
+            line = clean_text(raw_line)
+            if not line:
                 continue
 
-            for raw_line in text.splitlines():
-                line = re.sub(r"\(cid:\d+\)", "", raw_line).strip()
-                if not line:
-                    continue
+            if re.match(r"^[A-Z][A-Z0-9/-]*$", line) and not line.startswith("Desc"):
+                if line not in ("PAGE",) and len(line) < 20:
+                    current_section = line
+                    sections.append((current_section, []))
+                continue
 
-                if re.match(r"^[A-Z][A-Z0-9/-]*$", line) and not line.startswith("Desc"):
-                    if line not in ("PAGE",) and len(line) < 20:
-                        current_section = line
-                        sections.append((current_section, []))
-                    continue
+            parsed = parse_line_item(line)
+            if parsed and current_section:
+                sections[-1][1].append(parsed)
 
-                parsed = parse_line_item(line)
-                if parsed and current_section:
-                    if parsed["type"] == "item":
-                        sections[-1][1].append(parsed)
-                    elif parsed["type"] == "section_total":
-                        sections[-1][1].append(parsed)
+    return sections
 
-    meta = extract_metadata(full_text)
-    summary = parse_summary(full_text)
 
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "BOM"
+def sanitize_sheet_name(name: str) -> str:
+    cleaned = re.sub(r"[\\/*?:\[\]]", "", name).strip()[:31]
+    return cleaned or "BOM"
+
+
+def unique_sheet_name(base_name: str, used_names: set[str]) -> str:
+    candidate = sanitize_sheet_name(base_name)
+    if candidate not in used_names:
+        used_names.add(candidate)
+        return candidate
+
+    index = 2
+    while index < 100:
+        suffix = f" ({index})"
+        candidate = sanitize_sheet_name(f"{base_name[: 31 - len(suffix)]}{suffix}")
+        if candidate not in used_names:
+            used_names.add(candidate)
+            return candidate
+        index += 1
+
+    used_names.add(candidate)
+    return candidate
+
+
+def write_bom_sheet(
+    wb: Workbook,
+    sheet_name: str,
+    meta: dict,
+    sections: list[tuple[str, list]],
+    summary: list[dict],
+) -> None:
+    if sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+    else:
+        ws = wb.create_sheet(title=sheet_name)
+
     ws.sheet_view.showGridLines = True
     ws.page_setup.orientation = "landscape"
     ws.page_setup.fitToWidth = 1
@@ -391,8 +477,8 @@ def convert_bom(pdf_path: Path, xlsx_path: Path) -> None:
         "Extended Cost",
         "Waste",
     ]
-    for col, header in enumerate(headers, start=1):
-        ws.cell(row=header_row, column=col, value=header)
+    for col_index, header in enumerate(headers, start=1):
+        ws.cell(row=header_row, column=col_index, value=header)
     style_header_row(ws, header_row, len(headers))
 
     row = header_row + 1
@@ -456,8 +542,44 @@ def convert_bom(pdf_path: Path, xlsx_path: Path) -> None:
 
     ws.freeze_panes = ws.cell(row=header_row + 1, column=1)
 
+
+def convert_bom(pdf_path: Path, xlsx_path: Path) -> None:
+    page_texts: list[str] = []
+
+    with pdfplumber.open(pdf_path) as pdf:
+        for page in pdf.pages:
+            page_texts.append(page.extract_text() or "")
+
+    blocks = split_into_bom_blocks(page_texts)
+    if not blocks:
+        blocks = [
+            {
+                "item_no": "BOM",
+                "item_pages": page_texts[:2],
+                "summary_text": None,
+                "full_text": "\n".join(page_texts),
+            }
+        ]
+
+    wb = Workbook()
+    wb.remove(wb.active)
+    used_names: set[str] = set()
+
+    for block in blocks:
+        full_text = block["full_text"] or "\n".join(block["item_pages"])
+        meta = extract_metadata(full_text)
+        meta["item_no"] = meta.get("item_no") or block["item_no"]
+        sections = parse_sections_from_pages(block["item_pages"])
+        summary = parse_summary(full_text)
+        sheet_name = unique_sheet_name(block["item_no"], used_names)
+        write_bom_sheet(wb, sheet_name, meta, sections, summary)
+
     wb.save(xlsx_path)
-    print(f"Created {xlsx_path}")
+    sheet_count = len(wb.sheetnames)
+    if sheet_count > 1:
+        print(f"Created {xlsx_path} with {sheet_count} BOM sheets")
+    else:
+        print(f"Created {xlsx_path}")
 
 
 def main() -> None:

@@ -11,7 +11,7 @@ const itemCountEl = document.getElementById("item-count");
 const downloadBtn = document.getElementById("download-btn");
 const chooseBtn = document.getElementById("choose-btn");
 
-let currentBom = null;
+let currentReport = null;
 let currentFileName = "bom.xlsx";
 
 function setStatus(message) {
@@ -28,7 +28,7 @@ function resetUi() {
   resultEl.hidden = true;
   showError("");
   setStatus("");
-  currentBom = null;
+  currentReport = null;
 }
 
 function outputFileName(pdfName) {
@@ -49,12 +49,17 @@ async function processFile(file) {
   resultEl.hidden = true;
 
   try {
-    const bom = await parseBomPdf(file, window.pdfjsLib);
-    currentBom = bom;
+    const report = await parseBomPdf(file, window.pdfjsLib);
+    currentReport = report;
     currentFileName = outputFileName(file.name);
 
     fileNameEl.textContent = file.name;
-    itemCountEl.textContent = `${bom.itemCount} line items across ${bom.sections.length} categories`;
+    if (report.bomCount > 1) {
+      itemCountEl.textContent = `${report.bomCount} BOMs found, ${report.itemCount} total line items`;
+    } else {
+      const bom = report.boms[0];
+      itemCountEl.textContent = `${report.itemCount} line items across ${bom.sections.length} categories`;
+    }
     resultEl.hidden = false;
     setStatus("");
     showError("");
@@ -66,12 +71,12 @@ async function processFile(file) {
 }
 
 downloadBtn.addEventListener("click", async () => {
-  if (!currentBom) return;
+  if (!currentReport) return;
 
   try {
     setStatus("Building Excel file…");
     downloadBtn.disabled = true;
-    await downloadExcel(currentBom, window.ExcelJS, currentFileName);
+    await downloadExcel(currentReport, window.ExcelJS, currentFileName);
     setStatus("Download started.");
   } catch (error) {
     console.error(error);
