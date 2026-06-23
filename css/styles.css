@@ -46,7 +46,7 @@ body {
 
 .brand-logo {
   display: block;
-  width: min(280px, 72vw);
+  width: min(140px, 36vw);
   height: auto;
   margin: 0 auto 16px;
 }
