@@ -114,8 +114,8 @@ const SUMMARY_PATTERNS = [
 ];
 
 export function parseSummary(text) {
-  const match = text.match(/Totals for Finished Item:[\s\S]*/);
-  const block = match ? match[0] : text;
+  const matches = [...text.matchAll(/Totals for Finished Item:[\s\S]*/g)];
+  const block = matches.length ? matches[matches.length - 1][0] : text;
   const rows = [];
 
   for (const rawLine of block.split(/\r?\n/)) {
@@ -213,7 +213,8 @@ export function splitIntoBomBlocks(pageTexts) {
       bomTextParts.push(pageText);
     } else if (
       pageText.includes("COSTED BILL OF MATERIAL") &&
-      pageText.includes("ITEM NO")
+      pageText.includes("ITEM NO") &&
+      !totalsMatch
     ) {
       bomTextParts.push(pageText);
     }

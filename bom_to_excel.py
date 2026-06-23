@@ -100,8 +100,8 @@ def extract_metadata(text: str) -> dict:
 
 def parse_summary(text: str) -> list[dict]:
     """Extract summary rows from the detailed totals page (CURR cost only)."""
-    match = re.search(r"Totals for Finished Item:.*", text, re.DOTALL)
-    block = match.group(0) if match else text
+    matches = list(re.finditer(r"Totals for Finished Item:.*", text, re.DOTALL))
+    block = matches[-1].group(0) if matches else text
     rows = []
     patterns = [
         (r"^MATERIAL\s+([\d.]+)", "MATERIAL", "material"),
@@ -362,7 +362,11 @@ def split_into_bom_blocks(page_texts: list[str]) -> list[dict]:
         if has_line_items:
             item_pages.append(page_text)
             bom_text_parts.append(page_text)
-        elif "COSTED BILL OF MATERIAL" in page_text and "ITEM NO" in page_text:
+        elif (
+            "COSTED BILL OF MATERIAL" in page_text
+            and "ITEM NO" in page_text
+            and not totals_match
+        ):
             bom_text_parts.append(page_text)
 
         if totals_match:
