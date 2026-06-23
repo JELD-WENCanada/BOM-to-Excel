@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>JELD-WEN BOM Converter</title>
+    <meta
+      name="description"
+      content="JELD-WEN BOM Converter turns costed BOM PDFs into editable Excel spreadsheets with live formulas. Runs entirely in your browser."
+    />
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body>
+    <main class="page">
+      <header class="hero">
+        <p class="eyebrow">JELD-WEN</p>
+        <h1>BOM Converter</h1>
+        <p class="lead">
+          Drop a costed Bill of Materials PDF and download an editable Excel
+          workbook with formulas, category totals, and a live cost summary. BOY
+          columns are removed automatically.
+        </p>
+      </header>
+
+      <section class="card">
+        <div id="drop-zone" class="drop-zone" tabindex="0" aria-label="Upload BOM PDF">
+          <div class="drop-icon">PDF</div>
+          <p class="drop-title">Drop your BOM PDF here</p>
+          <p class="drop-hint">or choose a file from your computer</p>
+          <div class="actions">
+            <button id="choose-btn" type="button">Choose PDF</button>
+          </div>
+          <input id="file-input" type="file" accept="application/pdf,.pdf" />
+        </div>
+
+        <p id="status" class="status" hidden></p>
+        <div id="error" class="error" hidden></div>
+
+        <div id="result" class="result" hidden>
+          <h2 id="file-name"></h2>
+          <p id="item-count"></p>
+          <div class="actions">
+            <button id="download-btn" type="button">Download Excel</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="features">
+        <article class="feature">
+          <h3>Editable spreadsheet</h3>
+          <p class="feature-list">
+            Line items, unit costs, and waste values can be changed directly in
+            Excel.
+          </p>
+        </article>
+        <article class="feature">
+          <h3>Formula-driven totals</h3>
+          <p class="feature-list">
+            Extended costs, section totals, and final cost roll up automatically
+            when numbers change.
+          </p>
+        </article>
+        <article class="feature">
+          <h3>Private by design</h3>
+          <p class="feature-list">
+            Conversion happens in your browser. PDFs are not uploaded to a
+            server.
+          </p>
+        </article>
+      </section>
+
+      <p class="privacy-note">
+        Built for JELD-WEN costed BOM PDFs. Works best with the standard
+        PART# / QTY / CURR COST layout.
+      </p>
+    </main>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+    <script>
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    </script>
+    <script type="module" src="js/app.js"></script>
+  </body>
+</html>
