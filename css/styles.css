@@ -44,17 +44,11 @@ body {
   margin-bottom: 32px;
 }
 
-.eyebrow {
-  display: inline-block;
-  margin: 0 0 12px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 0.82rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+.brand-logo {
+  display: block;
+  width: min(280px, 72vw);
+  height: auto;
+  margin: 0 auto 16px;
 }
 
 h1 {
