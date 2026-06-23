@@ -11,7 +11,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 UOM_PATTERN = re.compile(
-    r"^(EA|M3|GA|RL|FT|PC|BOOT|PCS|LB|KG|IN|SF|SY|LF|CY|TON|GAL|QT|PT|OZ|ML|L|MM|CM|M)$"
+    r"^(EA|M3|GA|RL|FT|PC|BOOT|PCS|LB|KG|IN|SF|SY|LF|CY|TON|GAL|QT|PT|OZ|ML|L|MM|CM|M|TU)$"
 )
 NUM_OR_STAR = re.compile(r"^(\d+\.?\d*|\*{8})$")
 
@@ -43,7 +43,7 @@ def parse_line_item(line: str) -> dict | None:
             }
         return None
 
-    if not re.match(r"^\d{5}\s", line):
+    if not re.match(r"^\d{5,}\s", line):
         return None
 
     tokens = line.split()
@@ -343,7 +343,16 @@ def write_summary_panel(
 
 
 def page_has_line_items(text: str) -> bool:
-    return bool(re.search(r"^\d{5}\s", text, re.MULTILINE))
+    return bool(re.search(r"^\d{5,}\s", text, re.MULTILINE))
+
+
+def is_section_header(line: str) -> bool:
+    return (
+        bool(re.match(r"^[A-Za-z][A-Za-z0-9/-]*$", line))
+        and not line.startswith("Desc")
+        and line not in ("PAGE",)
+        and len(line) < 24
+    )
 
 
 def page_starts_bom(text: str) -> bool:
@@ -422,10 +431,9 @@ def parse_sections_from_pages(page_texts: list[str]) -> list[tuple[str, list]]:
             if not line:
                 continue
 
-            if re.match(r"^[A-Z][A-Z0-9/-]*$", line) and not line.startswith("Desc"):
-                if line not in ("PAGE",) and len(line) < 20:
-                    current_section = line
-                    sections.append((current_section, []))
+            if is_section_header(line):
+                current_section = line.upper()
+                sections.append((current_section, []))
                 continue
 
             parsed = parse_line_item(line)

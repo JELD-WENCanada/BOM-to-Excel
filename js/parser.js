@@ -1,5 +1,5 @@
 const UOM_PATTERN =
-  /^(EA|M3|GA|RL|FT|PC|BOOT|PCS|LB|KG|IN|SF|SY|LF|CY|TON|GAL|QT|PT|OZ|ML|L|MM|CM|M)$/;
+  /^(EA|M3|GA|RL|FT|PC|BOOT|PCS|LB|KG|IN|SF|SY|LF|CY|TON|GAL|QT|PT|OZ|ML|L|MM|CM|M|TU)$/;
 const NUM_OR_STAR = /^(\d+\.?\d*|\*{8})$/;
 
 export function cleanText(value) {
@@ -34,7 +34,7 @@ export function parseLineItem(line) {
     return null;
   }
 
-  if (!/^\d{5}\s/.test(line)) return null;
+  if (!/^\d{5,}\s/.test(line)) return null;
 
   const tokens = line.split(/\s+/);
   if (tokens.length < 9) return null;
@@ -175,11 +175,9 @@ export function parseBomFromText(fullText, pageTexts, summaryText = null) {
       const line = cleanText(rawLine);
       if (!line) continue;
 
-      if (/^[A-Z][A-Z0-9/-]*$/.test(line) && !line.startsWith("Desc")) {
-        if (line !== "PAGE" && line.length < 20) {
-          currentSection = line;
-          sections.push({ name: currentSection, items: [] });
-        }
+      if (isSectionHeader(line)) {
+        currentSection = line.toUpperCase();
+        sections.push({ name: currentSection, items: [] });
         continue;
       }
 
@@ -197,8 +195,17 @@ export function parseBomFromText(fullText, pageTexts, summaryText = null) {
   };
 }
 
+function isSectionHeader(line) {
+  return (
+    /^[A-Za-z][A-Za-z0-9/-]*$/.test(line) &&
+    !line.startsWith("Desc") &&
+    line !== "PAGE" &&
+    line.length < 24
+  );
+}
+
 function pageHasLineItems(pageText) {
-  return /^\d{5}\s/m.test(pageText);
+  return /^\d{5,}\s/m.test(pageText);
 }
 
 function pageStartsBom(pageText) {
