@@ -197,10 +197,12 @@ export function parseBomFromText(fullText, pageTexts, summaryText = null) {
 
 function isSectionHeader(line) {
   return (
-    /^[A-Za-z][A-Za-z0-9/-]*$/.test(line) &&
+    /^[A-Za-z0-9][A-Za-z0-9./-]*$/.test(line) &&
+    !line.includes(" ") &&
     !line.startsWith("Desc") &&
     line !== "PAGE" &&
-    line.length < 24
+    line.length < 32 &&
+    !/^\d{5,}$/.test(line)
   );
 }
 

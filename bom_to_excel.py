@@ -348,10 +348,12 @@ def page_has_line_items(text: str) -> bool:
 
 def is_section_header(line: str) -> bool:
     return (
-        bool(re.match(r"^[A-Za-z][A-Za-z0-9/-]*$", line))
+        bool(re.match(r"^[A-Za-z0-9][A-Za-z0-9./-]*$", line))
+        and " " not in line
         and not line.startswith("Desc")
         and line not in ("PAGE",)
-        and len(line) < 24
+        and len(line) < 32
+        and not re.fullmatch(r"\d{5,}", line)
     )
 
 
