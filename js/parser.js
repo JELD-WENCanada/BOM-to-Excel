@@ -1,5 +1,5 @@
 const UOM_PATTERN =
-  /^(EA|M3|GA|RL|FT|PC|BOOT|PCS|LB|KG|IN|SF|SY|LF|CY|TON|GAL|QT|PT|OZ|ML|L|MM|CM|M|TU)$/;
+  /^(EA|M3|GA|RL|FT|PC|BOOT|PCS|LB|KG|IN|SF|SY|LF|CY|TON|GAL|QT|PT|OZ|ML|L|MM|CM|M|TU|CN|TB|BO|ST)$/i;
 const NUM_OR_STAR = /^(\d+\.?\d*|\*{8})$/;
 
 export function cleanText(value) {
@@ -49,7 +49,7 @@ export function parseLineItem(line) {
     part: head[0],
     description: head.slice(1).join(" "),
     qty: parseFloat(tail[0]),
-    uom: tail[1],
+    uom: tail[1].toUpperCase(),
     currPer: parseValue(tail[2]),
     currCost: parseValue(tail[3]),
     currWaste: parseValue(tail[4]),

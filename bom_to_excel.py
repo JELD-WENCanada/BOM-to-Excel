@@ -11,7 +11,8 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 UOM_PATTERN = re.compile(
-    r"^(EA|M3|GA|RL|FT|PC|BOOT|PCS|LB|KG|IN|SF|SY|LF|CY|TON|GAL|QT|PT|OZ|ML|L|MM|CM|M|TU)$"
+    r"^(EA|M3|GA|RL|FT|PC|BOOT|PCS|LB|KG|IN|SF|SY|LF|CY|TON|GAL|QT|PT|OZ|ML|L|MM|CM|M|TU|CN|TB|BO|ST)$",
+    re.IGNORECASE,
 )
 NUM_OR_STAR = re.compile(r"^(\d+\.?\d*|\*{8})$")
 
@@ -62,7 +63,7 @@ def parse_line_item(line: str) -> dict | None:
         "part": head[0],
         "description": " ".join(head[1:]),
         "qty": float(tail[0]),
-        "uom": tail[1],
+        "uom": tail[1].upper(),
         "curr_per": parse_value(tail[2]),
         "curr_cost": parse_value(tail[3]),
         "curr_waste": parse_value(tail[4]),
